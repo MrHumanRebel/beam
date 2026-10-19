@@ -1,5 +1,5 @@
 <resources>
-        <string name="app_name">Beam</string>
+    <string name="app_name">Beam</string>
     <string name="back">Kembali</string>
     <string name="battery">Baterai</string>
     <string name="charging">Mengisi daya</string>
@@ -22,7 +22,7 @@
     <string name="yes">ya</string>
 
     <!-- settings -->
-        <string name="themeColor">Warna Tema</string>
+    <string name="themeColor">Warna Tema</string>
     <string name="themeColorAuto">Otomatis</string>
     <string name="themeColorCustom">Kustom</string>
     <string name="themeColorCustomPick">Warna Kustom</string>
@@ -50,9 +50,9 @@
     <string name="cardSpacingRoomy">Longgar</string>
     <string name="cardSpacingDesc">Kerapatan celah dan sudut di antara kartu</string>
     <string name="currentScalar">Solusi Skalar Daya</string>
-    <string name="currentScalarDesc">Saat tidak tersambung ke pengisi daya, ubah nilai skalar ini hingga \\u0022Daya\\u0022 lebih besar dari 0W, tetapi kurang dari sekitar 10W.</string>
+    <string name="currentScalarDesc">Saat tidak tersambung ke pengisi daya, ubah nilai skalar ini hingga \u0022Daya\u0022 lebih besar dari 0W, tetapi kurang dari sekitar 10W.</string>
     <string name="invertCurrent">Balikkan Indikator Pengisian Daya</string>
-    <string name="invertCurrentDesc">Saat tidak tersambung ke pengisi daya, aktifkan opsi ini jika \\u0022Mengisi Daya\\u0022 tertulis \\u0022ya\\u0022.</string>
+    <string name="invertCurrentDesc">Saat tidak tersambung ke pengisi daya, aktifkan opsi ini jika \u0022Mengisi Daya\u0022 tertulis \u0022ya\u0022.</string>
     <string name="useFahrenheit">Fahrenheit</string>
     <string name="useFahrenheitDesc">Tampilkan suhu baterai dalam °F, bukan °C.</string>
     <string name="workarounds">Solusi Alternatif</string>

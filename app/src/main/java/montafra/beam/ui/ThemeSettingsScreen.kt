@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -181,6 +180,9 @@ fun ThemeSettingsScreen(navController: BeamNavController) {
                         Spacer(Modifier.height(12.dp))
                         CustomColorButton(
                             color = customColorValue,
+                            // Off the grid means the grid marks nothing, so the dot takes the
+                            // selected shape instead.
+                            selected = !isPresetSwatch(customColorValue),
                             onClick = { navController.navigate("settings/theme/color") },
                         )
                     }
@@ -406,10 +408,12 @@ fun ThemeSettingsScreen(navController: BeamNavController) {
 
 /**
  * Opens the full picker. The leading dot is the live seed, so the button doubles as an answer to
- * "which colour is Custom on right now" when the seed isn't one of the twelve swatches above.
+ * "which colour is Custom on right now" when the seed isn't one of the twelve swatches above -
+ * and [selected] squares the dot off the way a selected swatch is, since in that case nothing in
+ * the grid is marking the selection.
  */
 @Composable
-private fun CustomColorButton(color: Int, onClick: () -> Unit) {
+private fun CustomColorButton(color: Int, selected: Boolean, onClick: () -> Unit) {
     val haptic = LocalTapHaptics.current
     val outlineOnly = LocalOutlineOnlyCards.current
     val seed = Color(color)
@@ -435,8 +439,8 @@ private fun CustomColorButton(color: Int, onClick: () -> Unit) {
     ) {
         Box(
             modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
+                .size(SwatchHeight)
+                .clip(RoundedCornerShape(swatchCornerRadius(selected)))
                 .background(seed),
             contentAlignment = Alignment.Center,
         ) {
@@ -510,8 +514,8 @@ private fun ColorStyleChip(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            // Same double-clip ring the colour swatches use, squared off: an onSurface disc
-            // behind, inset, then the preview clipped over the top of it.
+            // A double-clip ring: an onSurface disc behind, inset, then the preview clipped over
+            // the top of it.
             modifier = Modifier
                 .size(64.dp)
                 .clip(RoundedCornerShape(20.dp))

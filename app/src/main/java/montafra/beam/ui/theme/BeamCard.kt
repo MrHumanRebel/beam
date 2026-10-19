@@ -57,17 +57,17 @@ enum class CardSpacing(
     Compact(
         key = "compact", labelRes = R.string.cardSpacingCompact,
         group = 10.dp, stack = 2.dp, homeGroup = 8.dp, homeStack = 3.dp,
-        inner = 4.dp, homeInner = 10.dp, outerShift = 0.dp,
+        inner = 4.dp, homeInner = 6.dp, outerShift = 0.dp,
     ),
     Medium(
         key = "medium", labelRes = R.string.cardSpacingMedium,
         group = 16.dp, stack = 4.dp, homeGroup = 12.dp, homeStack = 6.dp,
-        inner = 8.dp, homeInner = 16.dp, outerShift = 4.dp,
+        inner = 8.dp, homeInner = 10.dp, outerShift = 4.dp,
     ),
     Roomy(
         key = "roomy", labelRes = R.string.cardSpacingRoomy,
         group = 24.dp, stack = 8.dp, homeGroup = 18.dp, homeStack = 12.dp,
-        inner = 16.dp, homeInner = 24.dp, outerShift = 8.dp,
+        inner = 16.dp, homeInner = 16.dp, outerShift = 8.dp,
     );
 
     companion object {

@@ -1,0 +1,5 @@
+2.1
+• Added Indonesian translation, thanks to @Baydra
+• Added new x0.002 and x2000 power scalars
+• Updated shapes in colour palette
+• Updated home cards' inner corners

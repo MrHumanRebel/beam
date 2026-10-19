@@ -1,0 +1,4 @@
+• Indonesische Übersetzung hinzugefügt, danke an @Baydra
+• Neue Leistungsskalen x0.002 und x2000 hinzugefügt
+• Formen in der Farbpalette aktualisiert
+• Innere Ecken der Startbildschirm-Karten aktualisiert

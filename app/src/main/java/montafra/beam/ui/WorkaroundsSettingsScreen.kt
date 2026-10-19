@@ -22,15 +22,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,9 +54,16 @@ import montafra.beam.ui.theme.BeamCard
 import montafra.beam.ui.theme.CardGap
 import montafra.beam.ui.theme.cardShapeBottom
 import montafra.beam.ui.theme.cardShapeMiddle
-import montafra.beam.ui.theme.cardShapeSingle
 import montafra.beam.ui.theme.cardShapeTop
 import kotlin.math.roundToInt
+
+private val scalarValues = listOf(0.001f, 0.002f, 0.5f, 1f, 2f, 1000f, 2000f)
+private val scalarLabels = listOf("0.001×", "0.002×", "0.5×", "1×", "2×", "1000×", "2000×")
+// Seven labels overlap at phone width, so only the ends and the (exactly centred) 1× stop are
+// marked; the header echoes whichever stop is selected.
+private val scalarTickLabels = scalarLabels.mapIndexed { i, label ->
+    if (i == 0 || i == scalarLabels.lastIndex || scalarValues[i] == 1f) label else null
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,7 +91,12 @@ fun WorkaroundsSettingsScreen(navController: BeamNavController, vm: BatteryViewM
     val pollIntervals = listOf(1_250L, 1_750L, 2_500L, 3_500L, 5_000L, 7_500L, 10_000L)
     val pollLabels = listOf("1.25s", "1.75s", "2.5s", "3.5s", "5s", "7.5s", "10s")
 
-    var currentScalar by remember { mutableFloatStateOf(prefs.getFloat("currentScalar", 1f)) }
+    var scalarIndex by remember {
+        // A stored value outside the list (older build, hand-edited prefs) falls back to 1×, not
+        // to the first stop.
+        val saved = scalarValues.indexOf(prefs.getFloat("currentScalar", 1f))
+        mutableIntStateOf(if (saved >= 0) saved else scalarValues.indexOf(1f))
+    }
     var invertCurrent by remember { mutableStateOf(prefs.getBoolean("invertCurrent", false)) }
     var useFahrenheit by remember { mutableStateOf(prefs.getBoolean("useFahrenheit", false)) }
     var pollIndex by remember {
@@ -99,7 +107,7 @@ fun WorkaroundsSettingsScreen(navController: BeamNavController, vm: BatteryViewM
 
     fun saveWorkarounds() {
         prefs.edit()
-            .putFloat("currentScalar", currentScalar)
+            .putFloat("currentScalar", scalarValues[scalarIndex])
             .putBoolean("invertCurrent", invertCurrent)
             .putBoolean("useFahrenheit", useFahrenheit)
             .putLong("pollIntervalMs", pollIntervals[pollIndex])
@@ -122,29 +130,45 @@ fun WorkaroundsSettingsScreen(navController: BeamNavController, vm: BatteryViewM
                 )
             }
             item {
-                SubLabel(stringResource(R.string.currentScalar))
-                Spacer(Modifier.height(8.dp))
-                val scalarOptions = remember { listOf("0.001×", "0.5×", "1×", "2×", "1000×") }
-                val scalarValues = remember { listOf(0.001f, 0.5f, 1f, 2f, 1000f) }
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    scalarOptions.forEachIndexed { i, label ->
-                        SegmentedButton(
-                            selected = currentScalar == scalarValues[i],
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                currentScalar = scalarValues[i]
-                                saveWorkarounds()
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(i, scalarOptions.size),
-                            label = { Text(label, maxLines = 1, style = MaterialTheme.typography.labelMedium) },
-                        )
-                    }
-                }
-            }
-            item {
+                val sliderHaptic = LocalSilentHaptics.current
                 BeamCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = cardShapeSingle(),
+                    shape = cardShapeTop(),
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            SubLabel(stringResource(R.string.currentScalar))
+                            Text(
+                                text = scalarLabels[scalarIndex],
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Slider(
+                            value = scalarIndex.toFloat(),
+                            onValueChange = {
+                                val new = it.roundToInt()
+                                if (new != scalarIndex) {
+                                    sliderHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    scalarIndex = new
+                                }
+                            },
+                            onValueChangeFinished = { saveWorkarounds() },
+                            valueRange = 0f..(scalarValues.size - 1).toFloat(),
+                            steps = scalarValues.size - 2,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        SliderTickLabels(scalarTickLabels)
+                    }
+                }
+                CardGap()
+                BeamCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = cardShapeBottom(),
                 ) {
                     Column {
                         ToggleSettingRow(
@@ -204,31 +228,7 @@ fun WorkaroundsSettingsScreen(navController: BeamNavController, vm: BatteryViewM
                             steps = 5,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        Layout(
-                            content = {
-                                pollLabels.forEach { label ->
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { measurables, constraints ->
-                            val placeables = measurables.map { it.measure(Constraints()) }
-                            val width = constraints.maxWidth
-                            val height = placeables.maxOf { it.height }
-                            val n = placeables.size
-                            layout(width, height) {
-                                placeables.forEachIndexed { i, placeable ->
-                                    val center = (width * i.toFloat() / (n - 1)).roundToInt()
-                                    val x = (center - placeable.width / 2)
-                                        .coerceIn(0, width - placeable.width)
-                                    placeable.placeRelative(x, 0)
-                                }
-                            }
-                        }
+                        SliderTickLabels(pollLabels)
                     }
                 }
                 CardGap()
@@ -353,5 +353,38 @@ fun WorkaroundsSettingsScreen(navController: BeamNavController, vm: BatteryViewM
                 }
             }
             item { Spacer(Modifier.height(16.dp)) }
+    }
+}
+
+/**
+ * One label per slider stop, each centred under its stop and clamped to the row's edges. A
+ * `null` entry keeps its stop's slot (so the others stay aligned) but draws nothing.
+ */
+@Composable
+private fun SliderTickLabels(labels: List<String?>) {
+    Layout(
+        content = {
+            labels.forEach { label ->
+                Text(
+                    text = label ?: "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { measurables, constraints ->
+        val placeables = measurables.map { it.measure(Constraints()) }
+        val width = constraints.maxWidth
+        val height = placeables.maxOf { it.height }
+        val n = placeables.size
+        layout(width, height) {
+            placeables.forEachIndexed { i, placeable ->
+                val center = (width * i.toFloat() / (n - 1)).roundToInt()
+                val x = (center - placeable.width / 2)
+                    .coerceIn(0, width - placeable.width)
+                placeable.placeRelative(x, 0)
+            }
+        }
     }
 }
