@@ -1,0 +1,4 @@
+• Aggiunta la traduzione in indonesiano, grazie a @Baydra
+• Aggiunti i nuovi fattori di scala della potenza x0.002 e x2000
+• Aggiornate le forme nella tavolozza dei colori
+• Aggiornati gli angoli interni delle schede della schermata home

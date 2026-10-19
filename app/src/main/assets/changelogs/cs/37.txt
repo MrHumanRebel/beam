@@ -1,0 +1,5 @@
+2.1
+• Přidán indonéský překlad, díky @Baydra
+• Přidány nové hodnoty škálování výkonu x0.002 a x2000
+• Aktualizovány tvary v paletě barev
+• Aktualizovány vnitřní rohy karet na domovské obrazovce

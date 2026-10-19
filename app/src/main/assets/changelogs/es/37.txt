@@ -1,0 +1,5 @@
+2.1
+• Añadida la traducción al indonesio, gracias a @Baydra
+• Añadidas las nuevas escalas de potencia x0.002 y x2000
+• Actualizadas las formas de la paleta de colores
+• Actualizadas las esquinas interiores de las tarjetas de la pantalla de inicio

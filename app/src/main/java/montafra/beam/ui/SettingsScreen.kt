@@ -15,15 +15,21 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +50,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -63,6 +71,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import montafra.beam.LocalHapticsEnabled
 import montafra.beam.R
@@ -692,16 +701,29 @@ private val colorSwatches: List<Int> by lazy {
     }
 }
 
+/** Whether [color] is one of the twelve presets, i.e. a colour the grid itself will mark. */
+internal fun isPresetSwatch(color: Int): Boolean = color in colorSwatches
+
+/**
+ * Two rows of six, each row sharing the full width so the swatches grow with the screen rather
+ * than floating in it. The rows have no spacing of their own: every swatch's hit box already
+ * extends half a [SwatchGap] above and below the drawn shape, so stacking them flush leaves the
+ * same gap between rows as [SwatchGap] leaves between columns.
+ */
 @Composable
 internal fun ColorSwatchPicker(
     selectedColor: Int?,
     onColorSelected: (Int) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column {
         colorSwatches.chunked(6).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(SwatchGap)) {
                 row.forEach { color ->
-                    ColorSwatch(color, selected = selectedColor == color) { onColorSelected(color) }
+                    ColorSwatch(
+                        color,
+                        selected = selectedColor == color,
+                        modifier = Modifier.weight(1f),
+                    ) { onColorSelected(color) }
                 }
             }
         }
@@ -836,21 +858,94 @@ private fun DonateCard(
     }
 }
 
+/**
+ * The drawn height of a swatch, and the side of the custom colour button's dot. Half of it is the
+ * pill radius an unselected one rests at.
+ */
+internal val SwatchHeight = 40.dp
+
+/** The gap between swatches: between columns directly, between rows via [SwatchHitHeight]. */
+private val SwatchGap = 8.dp
+
+/**
+ * The tap target height: the drawn shape plus half a gap above and below, so a tap in the gap
+ * between rows still lands on the nearer swatch. The width is whatever the row hands out.
+ */
+private val SwatchHitHeight = SwatchHeight + SwatchGap
+
+/** Corner radius of a selected swatch - squared off into a rectangle, no longer a pill. */
+private val SwatchSelectedRadius = 8.dp
+
+/**
+ * The corner radius of a [SwatchHeight]-tall shape as it toggles between a resting pill (a circle,
+ * on a square) and a selected rounded rectangle - the same shape language as Material's expressive
+ * toggle buttons. Shared by the grid swatches and the custom colour button's dot so the two move
+ * on the same spring.
+ *
+ * The spring mirrors MotionScheme.fastSpatial by hand, since the material3 on the classpath ships
+ * no public MotionScheme yet (see BeamTheme). Its overshoot is clamped on the pill side - a radius
+ * past half the height is no longer a pill - and left alone on the way to the rectangle, where a
+ * dip below the selected radius just reads as the corners settling.
+ */
 @Composable
-internal fun ColorSwatch(color: Int, selected: Boolean, onClick: () -> Unit) {
+internal fun swatchCornerRadius(selected: Boolean): Dp {
+    val radius by animateDpAsState(
+        targetValue = if (selected) SwatchSelectedRadius else SwatchHeight / 2,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 800f),
+        label = "swatchCorner",
+    )
+    return radius.coerceAtMost(SwatchHeight / 2)
+}
+
+/**
+ * A pill at rest that squares off into a rounded rectangle when selected, with a check inside.
+ *
+ * The outer Box is the tap target and draws nothing; the ripple is drawn by the shaped Box inside
+ * so it stays clipped to the swatch while the hit box stays taller than the shape.
+ */
+@Composable
+internal fun ColorSwatch(
+    color: Int,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     val haptic = LocalTapHaptics.current
+    val interaction = remember { MutableInteractionSource() }
+    val swatch = Color(color)
     Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent)
-            .padding(if (selected) 2.5.dp else 0.dp)
-            .clip(CircleShape)
-            .background(Color(color))
-            .clickable {
+        modifier = modifier
+            .height(SwatchHitHeight)
+            .clickable(interactionSource = interaction, indication = null) {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
             },
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(SwatchHeight)
+                .clip(RoundedCornerShape(swatchCornerRadius(selected)))
+                .background(swatch)
+                .indication(interaction, ripple()),
+            contentAlignment = Alignment.Center,
+        ) {
+            AnimatedVisibility(
+                visible = selected,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ico_check),
+                    contentDescription = null,
+                    // The swatch is a saturated seed, so the glyph takes whichever of black or
+                    // white survives on it - the same rule CustomColorButton applies to its dot.
+                    tint = if (swatch.luminance() > 0.5f) Color.Black.copy(alpha = 0.7f) else Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+    }
 }
 

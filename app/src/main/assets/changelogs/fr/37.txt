@@ -1,0 +1,5 @@
+2.1
+• Ajout de la traduction indonésienne, merci à @Baydra
+• Ajout des nouvelles échelles de puissance x0.002 et x2000
+• Formes du nuancier de couleurs mises à jour
+• Coins intérieurs des cartes de l'écran d'accueil mis à jour

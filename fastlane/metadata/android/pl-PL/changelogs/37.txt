@@ -1,0 +1,4 @@
+• Dodano indonezyjskie tłumaczenie, dzięki @Baydra
+• Dodano nowe skale mocy x0.002 i x2000
+• Zaktualizowano kształty w palecie kolorów
+• Zaktualizowano wewnętrzne narożniki kart na ekranie głównym
