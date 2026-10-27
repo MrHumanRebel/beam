@@ -80,3 +80,23 @@ bc1q7v38g2xn7wxtwn6ewde4kydn5emjr3zt73ew96
 ```
 monta@cake.cash
 ```
+
+
+## Voltage-derived estimated battery level (fork feature)
+
+For devices whose Android battery level is stuck (e.g. 1% despite high voltage), Beam
+can **estimate** charge from the reported voltage without root. Choose
+**Notification → Estimated Charge (~%)** for the status-bar icon, or enable the
+estimated entry in notification details. The app also shows system and estimated
+percentages separately.
+
+The estimator uses an **illustrative high-voltage Li-ion lookup curve** for
+4.45 V-max cells such as Xiaomi 11T/BM59, a charging-voltage correction and
+smoothing. An optional ±150 mV offset is available in notification settings.
+It is **not a fuel-gauge recalibration**. Voltage alone cannot determine true
+state of charge; results can be substantially wrong under load or while charging.
+Never rely on the estimate for battery safety or intentional deep discharging.
+Invalid voltage reports show an unknown value, not Android's broken percentage.
+
+A CI workflow builds a debug APK with ID `montafra.beam.debug` that installs
+alongside the upstream app. APK artifacts are test builds, not release-signed.

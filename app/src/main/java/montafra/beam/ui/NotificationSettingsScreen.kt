@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,6 +16,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -32,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import montafra.beam.R
 import montafra.beam.settingsName
 import montafra.beam.settingsUpdateInd
@@ -61,6 +65,9 @@ fun NotificationSettingsScreen(navController: BeamNavController) {
         mutableStateOf(prefs.getBoolean("showScreenTimeInNotification", false))
     }
     val useFahrenheit = remember { prefs.getBoolean("useFahrenheit", false) }
+    var estimatedVoltageOffsetMv by remember {
+        mutableStateOf(prefs.getInt("estimatedVoltageOffsetMv", 0).coerceIn(-150, 150))
+    }
 
     fun saveIndicatorEntries() {
         prefs.edit().putStringSet("indicatorEntries", indicatorEntries).commit()
@@ -144,6 +151,73 @@ fun NotificationSettingsScreen(navController: BeamNavController) {
                             enabled = notificationIndicator != key,
                             shape = SegmentedButtonDefaults.itemShape(i, metricKeys.size),
                             label = { Text(metricLabels[i]) },
+                        )
+                    }
+                }
+            }
+            // The separate row does not compress the seven existing segmented icon choices.
+            item {
+                BeamCard(modifier = Modifier.fillMaxWidth(), shape = cardShapeSingle()) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.estimatedChargeLevel)) },
+                        supportingContent = { Text(stringResource(R.string.estimatedChargeDesc)) },
+                        trailingContent = {
+                            RadioButton(selected = notificationIndicator == "E%", onClick = null)
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            notificationIndicator = "E%"
+                            saveNotificationIndicator()
+                            if ("E%" in indicatorEntries) {
+                                indicatorEntries = indicatorEntries - "E%"
+                                saveIndicatorEntries()
+                            }
+                        },
+                    )
+                }
+            }
+            item {
+                BeamCard(modifier = Modifier.fillMaxWidth(), shape = cardShapeSingle()) {
+                    ToggleSettingRow(
+                        title = stringResource(R.string.estimatedInNotification),
+                        description = stringResource(R.string.estimatedInNotificationDesc),
+                        checked = "E%" in indicatorEntries,
+                        onCheckedChange = { checked ->
+                            indicatorEntries = if (checked) indicatorEntries + "E%"
+                                else indicatorEntries - "E%"
+                            saveIndicatorEntries()
+                        },
+                    )
+                }
+            }
+            item {
+                BeamCard(modifier = Modifier.fillMaxWidth(), shape = cardShapeSingle()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            stringResource(R.string.estimatedVoltageOffset, estimatedVoltageOffsetMv),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            stringResource(R.string.estimatedVoltageOffsetDesc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = estimatedVoltageOffsetMv.toFloat(),
+                            onValueChange = {
+                                estimatedVoltageOffsetMv = (it / 10f).roundToInt() * 10
+                            },
+                            valueRange = -150f..150f,
+                            steps = 29,
+                            onValueChangeFinished = {
+                                prefs.edit().putInt(
+                                    "estimatedVoltageOffsetMv", estimatedVoltageOffsetMv
+                                ).commit()
+                                context.sendBroadcast(
+                                    Intent().setPackage(context.packageName).setAction(settingsUpdateInd)
+                                )
+                            },
                         )
                     }
                 }

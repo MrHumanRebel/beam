@@ -81,6 +81,9 @@ class StatusService : Service() {
     }
     private var indicatorEntries: Set<String> = emptySet()
     private var notificationIndicator: String = "W"
+    private var estimatedVoltageOffsetMv = 0
+    private val estimateFilter = VoltageEstimateFilter()
+    private var estimatedChargePercent: Double? = null
     private var showTimeToFull: Boolean = true
     private var showScreenTimeInNotification: Boolean = false
     private var pollIntervalMs: Long = intervalMs
@@ -105,7 +108,7 @@ class StatusService : Service() {
     private var useFahrenheit = false
     private var initialized = false
     private lateinit var msgReceiver: MsgReceiver
-    private val metricOrder = listOf("W", "A", "Ah", "C", "V", "Wh", "%")
+    private val metricOrder = listOf("W", "A", "Ah", "C", "V", "Wh", "%", "E%")
     private lateinit var noteIntent: PendingIntent
     private lateinit var noteMgr: NotificationManager
     private var pluggedInAt: ZonedDateTime? = null
@@ -187,6 +190,7 @@ class StatusService : Service() {
         useFahrenheit = settings.getBoolean("useFahrenheit", false)
         indicatorEntries = settings.getStringSet("indicatorEntries", null) ?: emptySet()
         notificationIndicator = settings.getString("notificationIndicator", "W") ?: "W"
+        estimatedVoltageOffsetMv = settings.getInt("estimatedVoltageOffsetMv", 0).coerceIn(-150, 150)
         // The icon is a small ALPHA_8 bitmap, so it needs a bold weight to stay legible.
         // Pinning it matters: without it the variable fonts draw their default instance,
         // which is Light 300 for Space Grotesk.
@@ -399,6 +403,7 @@ class StatusService : Service() {
         "C"        -> R.string.temperature
         "V"        -> R.string.voltage
         "%"        -> R.string.chargeLevel
+        "E%"       -> R.string.estimatedChargeLevel
         else       -> R.string.power
     })
 
@@ -410,6 +415,7 @@ class StatusService : Service() {
 
     private fun metricValue(key: String) = when (key) {
         "%"  -> fmtPercent(snapshot.levelPercent)
+        "E%" -> fmtPercent(estimatedChargePercent)
         else -> fmt(when (key) {
             "A"  -> snapshot.amps
             "Ah" -> snapshot.energyAmpHours
@@ -420,7 +426,15 @@ class StatusService : Service() {
         })
     }
 
-    private fun metricUnit(key: String) = if (key == "C") tempUnit() else key
+    private fun metricUnit(key: String) = when (key) {
+        "C" -> tempUnit()
+        "E%" -> "~%"
+        else -> key
+    }
+
+    private fun metricDisplay(key: String): String = if (key == "E%") {
+        estimatedChargePercent?.let { "~${it.roundToInt()}%" } ?: "—"
+    } else "${metricValue(key)}${metricUnit(key)}"
 
     private fun init() {
         if (initialized) return
@@ -535,6 +549,7 @@ class StatusService : Service() {
     private fun buildNotification(): Notification {
         val iconValue = metricValue(notificationIndicator)
         val iconUnit  = metricUnit(notificationIndicator)
+        val iconTitle = if (notificationIndicator == "E%") metricDisplay("E%") else "$iconValue $iconUnit"
         val timeText = if (!showTimeToFull) "" else when (val seconds = snapshot.secondsUntilCharged) {
             null -> ""
             0.0  -> getString(R.string.fullyCharged)
@@ -542,7 +557,7 @@ class StatusService : Service() {
         }
 
         val builder = Notification.Builder(this, noteChannelId)
-            .setContentTitle("$iconValue $iconUnit")
+            .setContentTitle(iconTitle)
             .setSmallIcon(renderIcon(iconValue, iconUnit))
             .setContentIntent(noteIntent)
             .setOngoing(true)
@@ -554,14 +569,14 @@ class StatusService : Service() {
         if (entries.isNotEmpty() || screenTimeText != null) {
             val style = Notification.InboxStyle()
             entries.forEach { key ->
-                style.addLine("${metricLabel(key)}  ${metricValue(key)}${metricUnit(key)}")
+                style.addLine("${metricLabel(key)}  ${metricDisplay(key)}")
             }
             if (screenTimeText != null) {
                 style.addLine("${getString(R.string.screenTime)}  $screenTimeText")
             }
             if (timeText.isNotEmpty()) style.setSummaryText(timeText)
             val compactParts = mutableListOf<String>()
-            entries.forEach { k -> compactParts.add("${metricValue(k)}${metricUnit(k)}") }
+            entries.forEach { k -> compactParts.add(metricDisplay(k)) }
             if (screenTimeText != null) compactParts.add(screenTimeText)
             builder.setStyle(style).setContentText(compactParts.joinToString("  "))
         } else {
@@ -605,6 +620,7 @@ class StatusService : Service() {
                 }
             )
             .putExtra("chargeLevel", fmtPercent(snapshot.levelPercent) + "%")
+            .putExtra("estimatedLevel", metricDisplay("E%"))
             .putExtra("chargingSince",
                 when (val pluggedInAt = pluggedInAt) {
                     null -> indeterminate
@@ -636,6 +652,9 @@ class StatusService : Service() {
         debug("update()")
 
         snapshot = battery.snapshot()
+        estimatedChargePercent = estimateFilter.update(
+            VoltageEstimate.estimate(snapshot.millivolts, snapshot.charging, estimatedVoltageOffsetMv)
+        )
         // Order matters: a session reset that ran after reconcile would zero the period reconcile
         // had just opened and leave it closed until the next tick.
         syncPlugState()
