@@ -448,6 +448,7 @@ fun MainScreen(navController: BeamNavController, vm: BatteryViewModel = viewMode
                         ) {
                             val rows = listOf(
                                 stringResource(R.string.chargeLevel) to data.chargeLevel,
+                                stringResource(R.string.estimatedChargeLevel) to data.estimatedLevel,
                                 stringResource(R.string.charging) to data.charging,
                                 stringResource(R.string.chargingSince) to data.chargingSince,
                                 stringResource(R.string.timeToFullCharge) to data.timeToFullCharge,

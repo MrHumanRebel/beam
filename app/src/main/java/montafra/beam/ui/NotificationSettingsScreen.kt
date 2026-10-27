@@ -5,22 +5,30 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +40,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.viewmodel.compose.viewModel
+import montafra.beam.BatteryViewModel
+import montafra.beam.batteryCalibrateReq
+import montafra.beam.batteryClearCalibrationReq
+import kotlin.math.roundToInt
 import montafra.beam.R
 import montafra.beam.settingsName
 import montafra.beam.settingsUpdateInd
@@ -48,6 +63,8 @@ import montafra.beam.ui.theme.cardShapeTop
 fun NotificationSettingsScreen(navController: BeamNavController) {
     val context = LocalContext.current
     val haptic = LocalTapHaptics.current
+    val batteryVm: BatteryViewModel = viewModel()
+    val batteryData by batteryVm.data.collectAsState()
     val prefs = remember { context.getSharedPreferences(settingsName, Context.MODE_PRIVATE) }
 
     var indicatorEntries by remember {
@@ -61,6 +78,13 @@ fun NotificationSettingsScreen(navController: BeamNavController) {
         mutableStateOf(prefs.getBoolean("showScreenTimeInNotification", false))
     }
     val useFahrenheit = remember { prefs.getBoolean("useFahrenheit", false) }
+    var nominalMahText by remember {
+        mutableStateOf(prefs.getInt("nominalCapacityMah", 5000).toString())
+    }
+    var showCalibrateDialog by remember { mutableStateOf(false) }
+    var estimatedVoltageOffsetMv by remember {
+        mutableStateOf(prefs.getInt("estimatedVoltageOffsetMv", 0).coerceIn(-150, 150))
+    }
 
     fun saveIndicatorEntries() {
         prefs.edit().putStringSet("indicatorEntries", indicatorEntries).commit()
@@ -148,6 +172,135 @@ fun NotificationSettingsScreen(navController: BeamNavController) {
                     }
                 }
             }
+            // The separate row does not compress the seven existing segmented icon choices.
+            item {
+                BeamCard(modifier = Modifier.fillMaxWidth(), shape = cardShapeSingle()) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.estimatedChargeLevel)) },
+                        supportingContent = { Text(stringResource(R.string.estimatedChargeDesc)) },
+                        trailingContent = {
+                            RadioButton(selected = notificationIndicator == "E%", onClick = null)
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            notificationIndicator = "E%"
+                            saveNotificationIndicator()
+                            if ("E%" in indicatorEntries) {
+                                indicatorEntries = indicatorEntries - "E%"
+                                saveIndicatorEntries()
+                            }
+                        },
+                    )
+                }
+            }
+            item {
+                BeamCard(modifier = Modifier.fillMaxWidth(), shape = cardShapeSingle()) {
+                    ToggleSettingRow(
+                        title = stringResource(R.string.estimatedInNotification),
+                        description = stringResource(R.string.estimatedInNotificationDesc),
+                        checked = "E%" in indicatorEntries,
+                        onCheckedChange = { checked ->
+                            indicatorEntries = if (checked) indicatorEntries + "E%"
+                                else indicatorEntries - "E%"
+                            saveIndicatorEntries()
+                        },
+                    )
+                }
+            }
+            item {
+                BeamCard(modifier = Modifier.fillMaxWidth(), shape = cardShapeSingle()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(stringResource(R.string.estBm59Profile),
+                            style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = nominalMahText,
+                            onValueChange = { value ->
+                                if (value.length <= 5 && value.all { it.isDigit() })
+                                    nominalMahText = value
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.estCapacity)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            isError = nominalMahText.toIntOrNull()?.let { it in 1000..10000 } != true
+                        )
+                        Text(stringResource(R.string.estCapacityHelp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            enabled = nominalMahText.toIntOrNull()?.let { it in 1000..10000 } == true,
+                            onClick = {
+                                prefs.edit().putInt("nominalCapacityMah",
+                                    nominalMahText.toInt()).commit()
+                                context.sendBroadcast(Intent().setPackage(context.packageName)
+                                    .setAction(settingsUpdateInd))
+                            }
+                        ) { Text(stringResource(R.string.estCapacitySave)) }
+                    }
+                }
+            }
+            item {
+                BeamCard(modifier = Modifier.fillMaxWidth(), shape = cardShapeSingle()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(stringResource(R.string.calibrateFull),
+                            style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.calibrateWarning),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        Text(batteryData.calibrationInfo,
+                            style = MaterialTheme.typography.bodyMedium)
+                        Text(batteryData.estimateSource,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (batteryData.calibrationFeedback.isNotBlank())
+                            Text(batteryData.calibrationFeedback,
+                                style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(12.dp))
+                        Button(onClick = { showCalibrateDialog = true }) {
+                            Text(stringResource(R.string.calibrateFull))
+                        }
+                        OutlinedButton(onClick = {
+                            context.sendBroadcast(Intent().setPackage(context.packageName)
+                                .setAction(batteryClearCalibrationReq))
+                        }) { Text(stringResource(R.string.calibrateClear)) }
+                    }
+                }
+            }
+            item {
+                BeamCard(modifier = Modifier.fillMaxWidth(), shape = cardShapeSingle()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            stringResource(R.string.estimatedVoltageOffset, estimatedVoltageOffsetMv),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            stringResource(R.string.estimatedVoltageOffsetDesc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = estimatedVoltageOffsetMv.toFloat(),
+                            onValueChange = {
+                                estimatedVoltageOffsetMv = (it / 10f).roundToInt() * 10
+                            },
+                            valueRange = -150f..150f,
+                            steps = 29,
+                            onValueChangeFinished = {
+                                prefs.edit().putInt(
+                                    "estimatedVoltageOffsetMv", estimatedVoltageOffsetMv
+                                ).commit()
+                                context.sendBroadcast(
+                                    Intent().setPackage(context.packageName).setAction(settingsUpdateInd)
+                                )
+                            },
+                        )
+                    }
+                }
+            }
             item {
                 BeamCard(
                     modifier = Modifier.fillMaxWidth(),
@@ -222,4 +375,21 @@ fun NotificationSettingsScreen(navController: BeamNavController) {
             }
             item { Spacer(Modifier.height(16.dp)) }
     }
+    if (showCalibrateDialog) AlertDialog(
+        onDismissRequest = { showCalibrateDialog = false },
+        title = { Text(stringResource(R.string.calibrateFull)) },
+        text = { Text(stringResource(R.string.calibrateWarning)) },
+        confirmButton = {
+            Button(onClick = {
+                showCalibrateDialog = false
+                context.sendBroadcast(Intent().setPackage(context.packageName)
+                    .setAction(batteryCalibrateReq))
+            }) { Text(stringResource(R.string.calibrateConfirm)) }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = { showCalibrateDialog = false }) {
+                Text(stringResource(R.string.calibrateCancel))
+            }
+        }
+    )
 }
