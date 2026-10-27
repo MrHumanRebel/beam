@@ -82,6 +82,11 @@ class StatusService : Service() {
     private var indicatorEntries: Set<String> = emptySet()
     private var notificationIndicator: String = "W"
     private var estimatedVoltageOffsetMv = 0
+    private var nominalCapacityMah = 5000
+    private var fullCalibration: FullChargeCalibration? = null
+    private val chargeTracker = ChargeTracker()
+    private var estimateSource = EstimateSource.UNKNOWN
+    private var calibrationFeedback = ""
     private val estimateFilter = VoltageEstimateFilter()
     private var estimatedChargePercent: Double? = null
     private var showTimeToFull: Boolean = true
@@ -128,12 +133,15 @@ class StatusService : Service() {
                     loadSettings()
                     update()
                 }
+                batteryCalibrateReq -> calibrateFull()
+                batteryClearCalibrationReq -> clearCalibration()
                 Intent.ACTION_BATTERY_CHANGED -> {
                     // Driven by the OS even while the screen is off (the PeriodicTask is
                     // paused then), so alarms still fire. Only refresh the snapshot + check
                     // thresholds here; the status notification is left untouched. Skipped
                     // entirely when no alarm is enabled, so non-users don't wake on every change.
-                    if (alarms.any { it.enabled }) {
+                    if (fullCalibration != null) update()
+                    else if (alarms.any { it.enabled }) {
                         snapshot = battery.snapshot()
                         checkAlarms()
                     }
@@ -191,6 +199,7 @@ class StatusService : Service() {
         indicatorEntries = settings.getStringSet("indicatorEntries", null) ?: emptySet()
         notificationIndicator = settings.getString("notificationIndicator", "W") ?: "W"
         estimatedVoltageOffsetMv = settings.getInt("estimatedVoltageOffsetMv", 0).coerceIn(-150, 150)
+        nominalCapacityMah = settings.getInt("nominalCapacityMah", 5000).coerceIn(1000, 10000)
         // The icon is a small ALPHA_8 bitmap, so it needs a bold weight to stay legible.
         // Pinning it matters: without it the variable fonts draw their default instance,
         // which is Light 300 for Space Grotesk.
@@ -397,6 +406,54 @@ class StatusService : Service() {
         persistScreenTime()
     }
 
+    // Keep calibration state private to the service process, separately from
+    // settings shared with the UI process, to avoid stale SharedPreferences writes.
+    private fun restoreCalibration() {
+        val v = state.getFloat("fullReferenceMv", -1f).toDouble()
+        val ts = state.getLong("fullReferenceTime", -1L)
+        if (v !in 3900.0..4550.0 || ts <= 0L) return
+        fullCalibration = FullChargeCalibration(v,
+            state.getBoolean("fullReferenceCharging", false),
+            state.getLong("fullReferenceCounter", -1L).takeIf { it > 0L }, ts)
+    }
+
+    private fun calibrateFull() {
+        val fresh = battery.snapshot()
+        val v = fresh.millivolts
+        if (v == null || v !in 3900.0..4550.0) {
+            calibrationFeedback = getString(R.string.calibrateInvalidVoltage)
+            update()
+            return
+        }
+        val validCounter = fresh.energyRaw?.takeIf {
+            it > nominalCapacityMah * 250L && it < nominalCapacityMah * 1500L
+        }
+        val reference = FullChargeCalibration(
+            v, fresh.charging, validCounter, System.currentTimeMillis()
+        )
+        fullCalibration = reference
+        state.edit()
+            .putFloat("fullReferenceMv", v.toFloat())
+            .putLong("fullReferenceTime", reference.whenMs)
+            .putBoolean("fullReferenceCharging", fresh.charging)
+            .putLong("fullReferenceCounter", validCounter ?: -1L)
+            .apply()
+        chargeTracker.reset()
+        estimateFilter.reset()
+        calibrationFeedback = getString(R.string.calibrateSaved)
+        update()
+    }
+
+    private fun clearCalibration() {
+        fullCalibration = null
+        state.edit().remove("fullReferenceMv").remove("fullReferenceTime")
+            .remove("fullReferenceCharging").remove("fullReferenceCounter").apply()
+        chargeTracker.reset()
+        estimateFilter.reset()
+        calibrationFeedback = getString(R.string.calibrateCleared)
+        update()
+    }
+
     private fun metricLabel(key: String) = getString(when (key) {
         "A"        -> R.string.current
         "Ah", "Wh" -> R.string.energy
@@ -477,6 +534,8 @@ class StatusService : Service() {
             msgReceiver,
             IntentFilter().apply {
                 addAction(batteryDataReq)
+                addAction(batteryCalibrateReq)
+                addAction(batteryClearCalibrationReq)
                 addAction(settingsUpdateInd)
                 addAction(Intent.ACTION_BATTERY_CHANGED)
                 addAction(Intent.ACTION_POWER_CONNECTED)
@@ -495,6 +554,7 @@ class StatusService : Service() {
         init()
         loadSettings()
         restoreServiceState()
+        restoreCalibration()
         task.start()
     }
 
@@ -621,6 +681,18 @@ class StatusService : Service() {
             )
             .putExtra("chargeLevel", fmtPercent(snapshot.levelPercent) + "%")
             .putExtra("estimatedLevel", metricDisplay("E%"))
+            .putExtra("estimateSource", getString(when (estimateSource) {
+                EstimateSource.COUNTER -> R.string.estSourceCounter
+                EstimateSource.CURRENT -> R.string.estSourceCurrent
+                EstimateSource.CALIBRATED_VOLTAGE -> R.string.estSourceCalVoltage
+                EstimateSource.VOLTAGE -> R.string.estSourceVoltage
+                EstimateSource.UNKNOWN -> R.string.estSourceUnknown
+            }))
+            .putExtra("calibrationInfo", fullCalibration?.let {
+                getString(R.string.calibrateSavedVoltage,
+                    String.format(java.util.Locale.ROOT, "%.3f", it.millivolts / 1000.0))
+            } ?: getString(R.string.calibrateNone))
+            .putExtra("calibrationFeedback", calibrationFeedback)
             .putExtra("chargingSince",
                 when (val pluggedInAt = pluggedInAt) {
                     null -> indeterminate
@@ -652,9 +724,15 @@ class StatusService : Service() {
         debug("update()")
 
         snapshot = battery.snapshot()
-        estimatedChargePercent = estimateFilter.update(
-            VoltageEstimate.estimate(snapshot.millivolts, snapshot.charging, estimatedVoltageOffsetMv)
+        val result = chargeTracker.estimate(
+            snapshot.millivolts, snapshot.charging, snapshot.energyRaw,
+            snapshot.currentRaw, SystemClock.elapsedRealtime(), nominalCapacityMah,
+            estimatedVoltageOffsetMv, fullCalibration
         )
+        estimateSource = result.source
+        estimatedChargePercent = if (result.source == EstimateSource.COUNTER ||
+            result.source == EstimateSource.CURRENT) result.percent
+            else estimateFilter.update(result.percent)
         // Order matters: a session reset that ran after reconcile would zero the period reconcile
         // had just opened and leave it closed until the next tick.
         syncPlugState()
