@@ -37,7 +37,7 @@ class ChargeTracker {
         offsetMv: Int, full: FullChargeCalibration?
     ): ChargeEstimate {
         val voltage = VoltageEstimate.estimate(voltageMv, charging, offsetMv,
-            full?.millivolts, full?.wasCharging)
+            full?.millivolts, full?.wasCharging ?: false)
         if (full == null) return ChargeEstimate(voltage, if (voltage == null)
             EstimateSource.UNKNOWN else EstimateSource.VOLTAGE)
 
