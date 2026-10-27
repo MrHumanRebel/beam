@@ -224,14 +224,14 @@ fun NotificationSettingsScreen(navController: BeamNavController) {
                             label = { Text(stringResource(R.string.estCapacity)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            isError = nominalMahText.toIntOrNull() !in 1000..10000
+                            isError = nominalMahText.toIntOrNull()?.let { it in 1000..10000 } != true
                         )
                         Text(stringResource(R.string.estCapacityHelp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(8.dp))
                         Button(
-                            enabled = nominalMahText.toIntOrNull() in 1000..10000,
+                            enabled = nominalMahText.toIntOrNull()?.let { it in 1000..10000 } == true,
                             onClick = {
                                 prefs.edit().putInt("nominalCapacityMah",
                                     nominalMahText.toInt()).commit()
