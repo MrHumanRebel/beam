@@ -100,3 +100,24 @@ Invalid voltage reports show an unknown value, not Android's broken percentage.
 
 A CI workflow builds a debug APK with ID `montafra.beam.debug` that installs
 alongside the upstream app. APK artifacts are test builds, not release-signed.
+
+
+### Xiaomi 11T / BM59: full-charge calibration
+
+In **Notification**, set the rated capacity (5000 mAh by default). Once you
+have independently verified the battery is fully charged, tap **Calibrate 100%
+charge** and confirm. This saves the observed full voltage and (if reported)
+the native charge-counter reference. The status bar displays the estimated
+percentage separately from Android's potentially stuck 1%.
+
+The estimator prefers plausible changes in the native charge counter;
+otherwise it integrates charge/discharge current only across uninterrupted
+samples (gaps longer than 30 seconds invalidate tracking). When these are
+unavailable or inconsistent it falls back to the BM59-tailored voltage curve.
+The app shows the active source, and calibration survives restarts. Rated mAh
+affects charge-based tracking, **not** the voltage-only estimate.
+
+**Limits:** This is not a factory BM59 discharge curve. A single 100% point does
+not reveal the complete voltage/SoC relationship or true battery capacity;
+load, temperature, age and broken charge-counter telemetry can lead to large
+errors. Do not rely on it for battery safety decisions.

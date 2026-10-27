@@ -43,6 +43,8 @@ import montafra.beam.ui.theme.rememberThemePrefs
 const val namespace = "montafra.beam"
 const val batteryDataReq = "$namespace.battery-data-req"
 const val batteryDataResp = "$namespace.battery-data-resp"
+const val batteryCalibrateReq = "$namespace.calibrate-full"
+const val batteryClearCalibrationReq = "$namespace.clear-calibration"
 const val intervalMs = 1_250L
 const val noteChannelId = "$namespace.status.v6"
 const val noteId = 1
